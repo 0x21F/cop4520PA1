@@ -2,64 +2,40 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <mutex>
+#include <string>
 #include <thread> 
 
 #define N_THREADS 8 
 
-struct Boundaries {
-	int start;
-	int end;
-	int val;
-};
+int sieveOfEratosthenes(int n);
+int sieveOfEratosthenesMultiThreaded(int n, int *count);
+void setArr(int start, int end, bool *arr); 
+void sumPrimes(int start, int end, bool *arr, int *ret, int *sum); 
 
 // this is oddly looking more like c than cpp
 int main (int argc, char **argv) { 
 	if(argc < 3) {
-		printf("Not enough args. Format is: ./%s n_primes outputfile", argv[0]);
+		printf("Not enough args. Format is: %s n_primes outputfile", argv[0]);
 		return 1;
 	}
 
+	int n = atoi(argv[1]);
+	std::string str = argv[2];
 	// well now it looks kind of like cpp
 	auto start = std::chrono::steady_clock::now();
-
+	int res = sieveOfEratosthenes(n); 
+	int cnt;
+	int res2 = sieveOfEratosthenesMultiThreaded(n, &cnt);
 	auto finished = std::chrono::steady_clock::now();
 
-	printf("%d", 69);
+	printf("\ntotal:%d, %d\n", res, res2);
 	return 0;
 }
 
-/** original sieve in go. don't question why I returned a hashmap
- * // if only we could use go :moyai:
- * func SieveOfEratosthenes(n int) map[int]bool {
- *     res := make(map[int]bool)
- *     tracker := make([]bool, n)
- *     max := int(math.Sqrt(float64(n)))
- *  
- *     for i := 0; i < n; i++ {
- *     	tracker[i] = true
- *     }
- *  
- *     for i := 2; i < max; i++ {
- *     		if tracker[i] == true {
- *  
- *     		for j := i * i; j < n; j += i {
- *     			tracker[j] = false
- *     		}
- *     	}
- *     }
- *  
- *     for i := 0; i < n; i++ {
- *     	if tracker[i] == true {
- *     		res[i] = true
- *     	}
- *     }
- *  
- *     return res
- *  
- */
-
 int sieveOfEratosthenes(int n) {
+	if (n < 4) {
+		return 5;
+	}
 	int res = 0;
 	int max = (int)sqrt((double)n);
 	// not sure if this gets nulled out to 0/false by default. 
@@ -68,6 +44,7 @@ int sieveOfEratosthenes(int n) {
 	bool *tracker = (bool *)malloc(n * sizeof(bool)); 
 
 	// parallelizable 
+	// no mutex
 	for(int i=0; i<n; i++) {
 		tracker[i] = true;
 	}
@@ -75,13 +52,17 @@ int sieveOfEratosthenes(int n) {
 	for(int i=2; i<max; i++) 
 		if(tracker[i]) 
 			// parallelizable 
+			// no mutex needed either
 			for(int j=i*i; j < n; j+=i) 
 				tracker[j] = false;
 	
 	// parallelizable
 	// don't even need a mutex which is nice
 	for(int i=2; i<n; i++) {
-		res += tracker[i] ? i : 0; 
+		if (tracker[i]) {
+			res += i; 
+			printf("%d ", i);
+		}
 	}
 
 	free(tracker);
@@ -89,3 +70,80 @@ int sieveOfEratosthenes(int n) {
 	return res; 
 }
 
+int sieveOfEratosthenesMultiThreaded(int n, int *count) {
+	if (n < 4) {
+		return 5;
+	}
+
+	int res = 0;
+	int max = (int)sqrt((double)n);
+
+	bool *tracker = (bool *)malloc(n * sizeof(bool)); 
+	std::thread hands[N_THREADS];
+
+	int split = n / N_THREADS;
+
+	// parallelizable 
+	// no mutex
+	for(int t=0; t < N_THREADS; t++){
+		int begin = t * split;
+		int end = t == (N_THREADS - 1) ? n : (t+1) * split;
+		hands[t] = std::thread([&] {
+					for(int i=begin; i < end; i++) 
+						tracker[i] = true;
+				});
+	}
+	
+	for(int t=0; t < N_THREADS; t++ ) 
+		hands[t].join();
+
+	// this loop has to be serial
+	for(int i=2; i<max; i++) {
+		if(tracker[i]) {
+			split = (n - i*i) / N_THREADS;
+			for(int t = 0; t < N_THREADS; t++) {
+				int begin = t * split + i*i; 
+				begin = begin % i == 0 ? begin : (begin - (begin % i)) + i;
+				int end = t == (N_THREADS - 1) ? n : (t+1) * split;
+				hands[t] = std::thread([&] {
+							for(int j=begin; j < end; j+=i) 
+								tracker[j] = false;
+						});
+			}
+
+			for(int t=0; t < N_THREADS; t++ ) 
+				hands[t].join();
+		}
+	}
+	
+	// parallelizable
+	// don't even need a mutex which is nice
+	int counts[N_THREADS];
+	int sums[N_THREADS];
+
+	split = (n-2) / N_THREADS;
+
+	for(int t=0; t < N_THREADS; t++){
+		int begin = t * split;
+		int end = t == (N_THREADS - 1) ? n : (t+1) * split;
+		hands[t] = std::thread([&] {
+				for(int i=begin; i < end; i++) {
+					if(tracker[i])  {
+						counts[i] += 1;
+						sums[i] += i;
+					}
+				}
+				});
+	}
+
+	// collect threads and sum up everything
+	for(int t=0; t < N_THREADS; t++)  {
+		hands[t].join();
+		res += sums[t];
+		*count += counts[t];
+	}
+
+	free(tracker);
+
+	return res; 
+}
