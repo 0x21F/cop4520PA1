@@ -2,7 +2,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <string>
 #include <thread> 
 
 #define N_THREADS 8 
@@ -20,13 +19,17 @@ int main (int argc, char **argv) {
 	}
 
 	int n = atoi(argv[1]);
-	std::string str = argv[2];
+	FILE *fp = std::fopen(argv[2], "w+");
 	// well now it looks kind of like cpp
-	auto start = std::chrono::steady_clock::now();
 	int res = sieveOfEratosthenes(n); 
+	auto start = std::chrono::steady_clock::now();
 	int cnt;
 	int res2 = sieveOfEratosthenesMultiThreaded(n, &cnt);
 	auto finished = std::chrono::steady_clock::now();
+	
+
+	fprintf(fp, "%lf %d %d\n",std::chrono::duration<double, std::milli>(finished-start).count(), cnt, res );
+	fclose(fp);
 
 	printf("\ntotal:%d, %d\n", res, res2);
 	return 0;
@@ -83,8 +86,6 @@ int sieveOfEratosthenesMultiThreaded(int n, int *count) {
 
 	int split = n / N_THREADS;
 
-	// parallelizable 
-	// no mutex
 	for(int t=0; t < N_THREADS; t++){
 		int begin = t * split;
 		int end = t == (N_THREADS - 1) ? n : (t+1) * split;
@@ -97,6 +98,7 @@ int sieveOfEratosthenesMultiThreaded(int n, int *count) {
 	for(int t=0; t < N_THREADS; t++ ) 
 		hands[t].join();
 
+
 	// this loop has to be serial
 	for(int i=2; i<max; i++) {
 		if(tracker[i]) {
@@ -106,13 +108,17 @@ int sieveOfEratosthenesMultiThreaded(int n, int *count) {
 				begin = begin % i == 0 ? begin : (begin - (begin % i)) + i;
 				int end = t == (N_THREADS - 1) ? n : (t+1) * split;
 				hands[t] = std::thread([&] {
-							for(int j=begin; j < end; j+=i) 
+						for(int j=begin; j < end; j+=i) {
+								printf("removing %d from thread %d\n", j, t);
 								tracker[j] = false;
+						}
 						});
 			}
 
 			for(int t=0; t < N_THREADS; t++ ) 
 				hands[t].join();
+			printf("finished filtering\n");
+
 		}
 	}
 	
@@ -124,24 +130,30 @@ int sieveOfEratosthenesMultiThreaded(int n, int *count) {
 	split = (n-2) / N_THREADS;
 
 	for(int t=0; t < N_THREADS; t++){
-		int begin = t * split;
+		int begin = 2 + t * split;
 		int end = t == (N_THREADS - 1) ? n : (t+1) * split;
+
+		printf("starting checking thread[%d] \n", t);
 		hands[t] = std::thread([&] {
 				for(int i=begin; i < end; i++) {
 					if(tracker[i])  {
-						counts[i] += 1;
-						sums[i] += i;
+						printf("found %d from thread %d\n", i, t);
+						counts[t] += 1;
+						sums[t] += i;
 					}
 				}
 				});
 	}
 
+	
+	printf("finished checking, collecting now\n");
 	// collect threads and sum up everything
 	for(int t=0; t < N_THREADS; t++)  {
 		hands[t].join();
 		res += sums[t];
 		*count += counts[t];
 	}
+
 
 	free(tracker);
 
