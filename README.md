@@ -5,3 +5,7 @@ The general idea was to allocate an array of booleans, which is standard for thi
 
 # running
 compile with g++, no particular options, run ./executable_name num outfile
+
+# The Java Update
+I rewrote it in java, and it did appear to work correctly, save for the performance being horrid. If I had to guess it's due to thread instantiation being expensive in java, alongside the issue of the array being passed between CPU caches every time the thread changes and maybe not fitting. 
+might try rewriting it in another lang that has green threads to see if it's just thread instantiation slowing it down or cpu cache issues. That's all.
